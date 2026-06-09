@@ -1,10 +1,25 @@
 Bonjour {firstname} {lastname},
 
-Vous trouverez en pièce jointe votre facture n° {invoice_number}, correspondant à votre commande {order_reference}.
+Nous vous confirmons l'enregistrement et le paiement de votre commande {order_reference}. Merci de votre confiance !
 
-Cette facture a valeur de document légal : nous vous invitons à la conserver.
+{invoice_line_text}
 
-Merci de votre confiance,
+RÉCAPITULATIF
+-------------
+{order_details_text}
+{download_block_text}
+Adresse de facturation :
+{invoice_address_text}
+
+Adresse de livraison :
+{delivery_address_text}
+
+Retrouvez votre commande : {order_link}
+
+DROIT DE RÉTRACTATION (à adapter à vos CGV)
+Vous disposez d'un délai de 14 jours à compter de la réception des biens pour exercer votre droit de rétractation, sans avoir à justifier de motifs. Ce droit ne s'applique pas aux contenus numériques fournis immédiatement après votre commande, dont vous avez expressément accepté l'exécution immédiate et reconnu la perte du droit de rétractation. Voir nos conditions générales de vente pour les modalités complètes.
+
+À bientôt,
 L'équipe {shop_name}
 
 ---

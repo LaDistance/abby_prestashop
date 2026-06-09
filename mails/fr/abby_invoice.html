@@ -3,13 +3,13 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Votre facture</title>
+    <title>Votre commande</title>
 </head>
 <body style="margin:0; padding:0; background-color:#f6f6f6; font-family:Arial, Helvetica, sans-serif; color:#333333;">
     <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color:#f6f6f6; padding:24px 0;">
         <tr>
             <td align="center">
-                <table border="0" cellpadding="0" cellspacing="0" width="600" style="background-color:#ffffff; border-radius:6px; overflow:hidden;">
+                <table border="0" cellpadding="0" cellspacing="0" width="640" style="background-color:#ffffff; border-radius:6px; overflow:hidden;">
                     <tr>
                         <td style="background-color:#2b2b2b; padding:24px 32px;">
                             <span style="color:#ffffff; font-size:18px; font-weight:bold;">{shop_name}</span>
@@ -19,15 +19,49 @@
                         <td style="padding:32px;">
                             <p style="margin:0 0 16px; font-size:15px;">Bonjour {firstname} {lastname},</p>
                             <p style="margin:0 0 16px; font-size:15px; line-height:1.5;">
-                                Vous trouverez en pièce jointe votre facture
-                                <strong>n° {invoice_number}</strong>, correspondant à votre commande
-                                <strong>{order_reference}</strong>.
+                                Nous vous confirmons l'enregistrement et le paiement de votre commande
+                                <strong>{order_reference}</strong>. Merci de votre confiance !
                             </p>
-                            <p style="margin:0 0 16px; font-size:15px; line-height:1.5;">
-                                Cette facture a valeur de document légal : nous vous invitons à la conserver.
-                            </p>
+                            <p style="margin:0 0 24px; font-size:15px; line-height:1.5;">{invoice_line_html}</p>
+
+                            <h3 style="margin:0 0 12px; font-size:16px; border-bottom:1px solid #eeeeee; padding-bottom:8px;">Récapitulatif</h3>
+                            {order_details_html}
+
+                            {download_block_html}
+
+                            <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:24px; font-size:14px;">
+                                <tr>
+                                    <td valign="top" width="50%" style="padding-right:12px;">
+                                        <h4 style="margin:0 0 8px; font-size:14px;">Adresse de facturation</h4>
+                                        <p style="margin:0; line-height:1.5; color:#555555;">{invoice_address_html}</p>
+                                    </td>
+                                    <td valign="top" width="50%" style="padding-left:12px;">
+                                        <h4 style="margin:0 0 8px; font-size:14px;">Adresse de livraison</h4>
+                                        <p style="margin:0; line-height:1.5; color:#555555;">{delivery_address_html}</p>
+                                    </td>
+                                </tr>
+                            </table>
+
                             <p style="margin:24px 0 0; font-size:15px;">
-                                Merci de votre confiance,<br>
+                                Vous pouvez retrouver votre commande à tout moment ici :
+                                <a href="{order_link}">accéder à ma commande</a>.
+                            </p>
+
+                            <!-- DROIT DE RÉTRACTATION — à adapter à vos CGV avant production -->
+                            <div style="margin-top:24px; padding:16px; background-color:#fafafa; border:1px solid #eeeeee; border-radius:4px;">
+                                <h4 style="margin:0 0 8px; font-size:13px; color:#555555;">Droit de rétractation</h4>
+                                <p style="margin:0; font-size:12px; line-height:1.5; color:#777777;">
+                                    Vous disposez d'un délai de 14 jours à compter de la réception des biens
+                                    pour exercer votre droit de rétractation, sans avoir à justifier de motifs.
+                                    Ce droit ne s'applique pas aux contenus numériques fournis immédiatement
+                                    après votre commande, dont vous avez expressément accepté l'exécution
+                                    immédiate et reconnu la perte du droit de rétractation. Voir nos conditions
+                                    générales de vente pour les modalités complètes.
+                                </p>
+                            </div>
+
+                            <p style="margin:24px 0 0; font-size:15px;">
+                                À bientôt,<br>
                                 L'équipe {shop_name}
                             </p>
                         </td>

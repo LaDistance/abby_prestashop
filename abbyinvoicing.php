@@ -39,6 +39,7 @@ class AbbyInvoicing extends Module
         if (!parent::install()
             || !abbyinvoicing_install_sql()
             || !$this->registerHook('actionOrderStatusPostUpdate')
+            || !$this->registerHook('actionEmailSendBefore')
             || !$this->registerHook('displayAdminOrderMainBottom')
         ) {
             return false;
@@ -50,6 +51,7 @@ class AbbyInvoicing extends Module
         Configuration::updateValue('ABBY_AUTO_FINALIZE', 0);
         Configuration::updateValue('ABBY_SEND_EMAIL', 1);
         Configuration::updateValue('ABBY_DISABLE_PS_INVOICE', 1);
+        Configuration::updateValue('ABBY_MERGE_EMAILS', 1);
         Configuration::updateValue('ABBY_TRIGGER_STATUS', (int) Configuration::get('PS_OS_PAYMENT'));
 
         // Abby devient le moteur de facturation : on coupe la facture native PrestaShop
@@ -73,6 +75,7 @@ class AbbyInvoicing extends Module
         Configuration::deleteByName('ABBY_AUTO_FINALIZE');
         Configuration::deleteByName('ABBY_SEND_EMAIL');
         Configuration::deleteByName('ABBY_DISABLE_PS_INVOICE');
+        Configuration::deleteByName('ABBY_MERGE_EMAILS');
         Configuration::deleteByName('ABBY_TRIGGER_STATUS');
 
         return parent::uninstall();
@@ -104,7 +107,52 @@ class AbbyInvoicing extends Module
             return;
         }
 
-        $sync->syncOrder((int) $params['id_order']);
+        $idOrder = (int) $params['id_order'];
+        $result = $sync->syncOrder($idOrder);
+
+        // En mode "email fusionné", PrestaShop n'a pas envoyé ses emails natifs
+        // (cf. hookActionEmailSendBefore) : c'est ici qu'on envoie l'unique email
+        // client. On l'envoie même si la synchro Abby a échoué — sinon le client
+        // ne recevrait aucune confirmation (l'email natif ayant été supprimé).
+        // En revanche, si la commande était déjà synchronisée ('skipped'), on ne
+        // renvoie pas l'email à chaque nouveau passage de statut.
+        if ((int) Configuration::get('ABBY_MERGE_EMAILS') && $result['status'] !== 'skipped') {
+            $invoice = isset($result['invoice']) ? $result['invoice'] : null;
+            $sync->sendConsolidatedEmail($idOrder, $invoice);
+        }
+    }
+
+    /* ----------------------------------------------------------------------
+     * Fusion des emails client : on supprime les emails natifs PrestaShop
+     * (confirmation de commande, paiement accepté, lien de téléchargement) ;
+     * le module envoie à la place un unique email récapitulatif + facture.
+     *
+     * Conçu pour les paiements INSTANTANÉS (CB/PayPal) : commande et paiement
+     * sont simultanés, donc un seul email après paiement suffit. À ne pas
+     * activer si la boutique accepte des paiements différés (virement, chèque).
+     * -------------------------------------------------------------------- */
+    public function hookActionEmailSendBefore(array $params)
+    {
+        // Fonctionnalité désactivée -> on laisse partir tous les emails natifs.
+        if (!(int) Configuration::get('ABBY_MERGE_EMAILS')) {
+            return true;
+        }
+
+        // Si le module n'est pas opérationnel (clé API absente), on ne supprime
+        // rien : on ne veut pas couper les emails natifs sans pouvoir les remplacer.
+        if (!Configuration::get('ABBY_API_KEY')) {
+            return true;
+        }
+
+        $merged = ['order_conf', 'payment', 'download_product'];
+        $template = isset($params['template']) ? $params['template'] : '';
+
+        // Retourner false annule l'envoi de CET email (cf. Mail::send PS 8).
+        if (in_array($template, $merged, true)) {
+            return false;
+        }
+
+        return true;
     }
 
     /* ----------------------------------------------------------------------
@@ -149,6 +197,7 @@ class AbbyInvoicing extends Module
             Configuration::updateValue('ABBY_AUTO_FINALIZE', (int) Tools::getValue('ABBY_AUTO_FINALIZE'));
             Configuration::updateValue('ABBY_SEND_EMAIL', (int) Tools::getValue('ABBY_SEND_EMAIL'));
             Configuration::updateValue('ABBY_DISABLE_PS_INVOICE', (int) Tools::getValue('ABBY_DISABLE_PS_INVOICE'));
+            Configuration::updateValue('ABBY_MERGE_EMAILS', (int) Tools::getValue('ABBY_MERGE_EMAILS'));
             Configuration::updateValue('ABBY_TRIGGER_STATUS', (int) Tools::getValue('ABBY_TRIGGER_STATUS'));
 
             // Applique l'activation/désactivation de la facture native PrestaShop.
@@ -157,6 +206,13 @@ class AbbyInvoicing extends Module
             // Garde-fou : l'envoi au client n'a lieu que sur une facture finalisée.
             if ((int) Tools::getValue('ABBY_SEND_EMAIL') && !(int) Tools::getValue('ABBY_AUTO_FINALIZE')) {
                 $output .= $this->displayWarning($this->l('« Envoyer la facture au client » nécessite « Finaliser automatiquement » : sans finalisation, aucune facture n\'est envoyée.'));
+            }
+
+            // Garde-fou : la fusion des emails remplace la confirmation native par
+            // l'email du module ; sans facture finalisée, le client reçoit la
+            // confirmation mais pas le PDF. À réserver aux paiements instantanés.
+            if ((int) Tools::getValue('ABBY_MERGE_EMAILS') && !(int) Tools::getValue('ABBY_AUTO_FINALIZE')) {
+                $output .= $this->displayWarning($this->l('Email fusionné activé sans finalisation auto : le client recevra la confirmation de commande mais la facture ne sera pas jointe (brouillon). Active aussi « Finaliser automatiquement » pour joindre le PDF.'));
             }
 
             // Test de connexion
@@ -221,6 +277,13 @@ class AbbyInvoicing extends Module
                         'values' => $this->switchValues(),
                     ],
                     [
+                        'type' => 'switch',
+                        'label' => $this->l('Fusionner les emails client'),
+                        'name' => 'ABBY_MERGE_EMAILS',
+                        'desc' => $this->l('Supprime les emails natifs (confirmation de commande, paiement accepté, téléchargement) et envoie à la place UN seul email récapitulatif avec la facture Abby. ⚠ Réservé aux paiements instantanés (CB/PayPal) : à désactiver si la boutique accepte virement/chèque.'),
+                        'values' => $this->switchValues(),
+                    ],
+                    [
                         'type' => 'select',
                         'label' => $this->l('Statut déclencheur'),
                         'name' => 'ABBY_TRIGGER_STATUS',
@@ -249,6 +312,7 @@ class AbbyInvoicing extends Module
             'ABBY_AUTO_FINALIZE' => Configuration::get('ABBY_AUTO_FINALIZE'),
             'ABBY_SEND_EMAIL' => Configuration::get('ABBY_SEND_EMAIL'),
             'ABBY_DISABLE_PS_INVOICE' => Configuration::get('ABBY_DISABLE_PS_INVOICE'),
+            'ABBY_MERGE_EMAILS' => Configuration::get('ABBY_MERGE_EMAILS'),
             'ABBY_TRIGGER_STATUS' => Configuration::get('ABBY_TRIGGER_STATUS'),
         ];
 
@@ -282,6 +346,7 @@ class AbbyInvoicing extends Module
             'franchise_tva' => (bool) Configuration::get('ABBY_FRANCHISE_TVA'),
             'auto_finalize' => (bool) Configuration::get('ABBY_AUTO_FINALIZE'),
             'send_email' => (bool) Configuration::get('ABBY_SEND_EMAIL'),
+            'merge_emails' => (bool) Configuration::get('ABBY_MERGE_EMAILS'),
         ]);
     }
 

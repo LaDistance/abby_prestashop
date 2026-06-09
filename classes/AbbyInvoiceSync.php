@@ -93,17 +93,17 @@ class AbbyInvoiceSync
                 $number = isset($finalized['number']) ? $finalized['number'] : null;
                 $this->saveMapping($idOrder, $invoiceId, 'finalized', $number);
 
-                // 3e. Envoi du PDF Factur-X au client par email PrestaShop.
-                // Uniquement sur une facture finalisée : un brouillon n'a aucune
-                // valeur comptable et n'est pas censé être transmis au client.
-                if (!empty($this->settings['send_email'])) {
-                    $this->sendInvoiceByEmail($order, $finalized);
+                // 3e. Email facture séparé : uniquement en mode NON fusionné. En mode
+                // fusionné, c'est le module (hookActionOrderStatusPostUpdate) qui envoie
+                // l'unique email récapitulatif, pour pouvoir aussi gérer le cas d'échec.
+                if (!empty($this->settings['send_email']) && empty($this->settings['merge_emails'])) {
+                    $this->sendConsolidatedEmail($idOrder, $finalized);
                 }
 
-                return ['status' => 'created', 'invoice_id' => $invoiceId, 'message' => 'Facture finalisée ' . ($number ?: '')];
+                return ['status' => 'created', 'invoice_id' => $invoiceId, 'invoice' => $finalized, 'message' => 'Facture finalisée ' . ($number ?: '')];
             }
 
-            return ['status' => 'created', 'invoice_id' => $invoiceId, 'message' => 'Facture brouillon créée.'];
+            return ['status' => 'created', 'invoice_id' => $invoiceId, 'invoice' => null, 'message' => 'Facture brouillon créée.'];
         } catch (AbbyApiException $e) {
             $this->saveMapping($idOrder, null, 'error', null, $e->getMessage());
             PrestaShopLogger::addLog(
@@ -114,63 +114,201 @@ class AbbyInvoiceSync
                 'Order',
                 $idOrder
             );
-            return ['status' => 'error', 'invoice_id' => null, 'message' => $e->getMessage()];
+            return ['status' => 'error', 'invoice_id' => null, 'invoice' => null, 'message' => $e->getMessage()];
         }
     }
 
     /* ----------------------------------------------------------------------
-     * Envoi du PDF de la facture au client (email PrestaShop)
+     * Email client unique (récapitulatif de commande + facture Abby)
      * -------------------------------------------------------------------- */
 
     /**
-     * Récupère le PDF Factur-X de la facture finalisée et l'envoie au client
-     * via le système de mail PrestaShop, en pièce jointe.
+     * Envoie au client l'unique email récapitulatif : confirmation de commande
+     * (lignes, totaux, adresses, droit de rétractation via le template) + lien de
+     * téléchargement le cas échéant + facture Abby en pièce jointe si disponible.
      *
-     * Prérequis : un template mail/<iso>/abby_invoice.(html|txt) dans le module.
+     * Remplace les emails natifs PrestaShop quand la fusion est active. Conçu pour
+     * être appelé même si la synchro Abby a échoué ($invoice = null) : le client
+     * reçoit alors la confirmation de commande sans la facture, jamais rien.
      *
-     * @param Order $order
-     * @param array $invoice Réponse Abby de la facture finalisée (contient id, number)
-     * @throws AbbyApiException
+     * Ne lève pas d'exception : un échec d'email ne doit pas casser le flux de
+     * commande (il est seulement logué).
+     *
+     * @param int        $idOrder
+     * @param array|null $invoice Facture Abby finalisée (contient id, number) ou null
+     * @return bool true si l'email est parti
      */
-    private function sendInvoiceByEmail(Order $order, array $invoice)
+    public function sendConsolidatedEmail($idOrder, array $invoice = null)
     {
-        if (empty($invoice['id'])) {
-            throw new AbbyApiException('Facture finalisée sans identifiant : PDF introuvable.', 0);
+        $order = new Order((int) $idOrder);
+        if (!Validate::isLoadedObject($order)) {
+            return false;
         }
-
-        // Endpoint dédié : Abby renvoie directement le PDF (Factur-X) du document.
-        $pdfContent = $this->api->downloadBilling($invoice['id']);
 
         $customer = new Customer((int) $order->id_customer);
         $idLang = (int) $order->id_lang;
-        $number = isset($invoice['number']) ? $invoice['number'] : $invoice['id'];
-        $fileName = 'Facture-' . preg_replace('/[^A-Za-z0-9_-]/', '', (string) $number) . '.pdf';
+        $blocks = $this->buildOrderBlocks($order);
+
+        // Pièce jointe : on ne joint le PDF que si la facture existe ET se télécharge.
+        $attachment = null;
+        $invoiceNumber = '';
+        if ($invoice !== null && !empty($invoice['id'])) {
+            $invoiceNumber = isset($invoice['number']) ? (string) $invoice['number'] : '';
+            try {
+                $pdf = $this->api->downloadBilling($invoice['id']);
+                $label = $invoiceNumber !== '' ? $invoiceNumber : (string) $invoice['id'];
+                $fileName = 'Facture-' . preg_replace('/[^A-Za-z0-9_-]/', '', $label) . '.pdf';
+                $attachment = ['content' => $pdf, 'name' => $fileName, 'mime' => 'application/pdf'];
+            } catch (AbbyApiException $e) {
+                PrestaShopLogger::addLog(
+                    'AbbyInvoicing - PDF non joint à l\'email (commande ' . (int) $idOrder . ') : ' . $e->getMessage(),
+                    2
+                );
+            }
+        }
+
+        if ($attachment !== null) {
+            $suffix = $invoiceNumber !== '' ? ' n° ' . $invoiceNumber : '';
+            $invoiceLineHtml = 'Votre facture' . htmlspecialchars($suffix, ENT_QUOTES, 'UTF-8') . ' est jointe à cet email (PDF).';
+            $invoiceLineText = 'Votre facture' . $suffix . ' est jointe à cet email (PDF).';
+            $subject = Mail::l('Votre commande et votre facture', $idLang);
+        } else {
+            $invoiceLineHtml = $invoiceLineText = 'Votre facture vous sera transmise séparément.';
+            $subject = Mail::l('Confirmation de votre commande', $idLang);
+        }
 
         $templateVars = [
             '{firstname}' => $customer->firstname,
             '{lastname}' => $customer->lastname,
-            '{order_reference}' => $order->reference,
-            '{invoice_number}' => (string) $number,
             '{shop_name}' => Configuration::get('PS_SHOP_NAME'),
+            '{order_reference}' => $order->reference,
+            '{invoice_line_html}' => $invoiceLineHtml,
+            '{invoice_line_text}' => $invoiceLineText,
+            '{order_details_html}' => $blocks['details_html'],
+            '{order_details_text}' => $blocks['details_text'],
+            '{invoice_address_html}' => $blocks['invoice_address_html'],
+            '{invoice_address_text}' => $blocks['invoice_address_text'],
+            '{delivery_address_html}' => $blocks['delivery_address_html'],
+            '{delivery_address_text}' => $blocks['delivery_address_text'],
+            '{download_block_html}' => $blocks['download_html'],
+            '{download_block_text}' => $blocks['download_text'],
+            '{order_link}' => $blocks['order_link'],
         ];
 
         $sent = Mail::Send(
             $idLang,
-            'abby_invoice',                                   // mail/<iso>/abby_invoice.(html|txt)
-            Mail::l('Votre facture', $idLang),
+            'abby_invoice',                                   // mails/<iso>/abby_invoice.(html|txt)
+            $subject,
             $templateVars,
             $customer->email,
             $customer->firstname . ' ' . $customer->lastname,
             null,                                             // from
             null,                                             // from_name
-            ['content' => $pdfContent, 'name' => $fileName, 'mime' => 'application/pdf'],
+            $attachment,                                      // null => pas de pièce jointe
             null,                                             // mode_smtp
             _PS_MODULE_DIR_ . 'abbyinvoicing/mails/'          // template_path
         );
 
         if (!$sent) {
-            throw new AbbyApiException('Echec de l\'envoi du mail PrestaShop avec la facture Abby.', 0);
+            PrestaShopLogger::addLog(
+                'AbbyInvoicing - échec de l\'envoi de l\'email client (commande ' . (int) $idOrder . ').',
+                3
+            );
         }
+
+        return (bool) $sent;
+    }
+
+    /**
+     * Construit les blocs réutilisés dans l'email (HTML et texte) : tableau des
+     * articles + totaux, adresses, lien commande, bloc téléchargement.
+     *
+     * @param Order $order
+     * @return array
+     */
+    private function buildOrderBlocks(Order $order)
+    {
+        $idLang = (int) $order->id_lang;
+        $currency = new Currency((int) $order->id_currency);
+        $link = Context::getContext()->link;
+
+        $rowsHtml = '';
+        $rowsText = '';
+        $hasVirtual = false;
+
+        foreach ($order->getProducts() as $p) {
+            $name = (string) $p['product_name'];
+            $ref = isset($p['product_reference']) ? (string) $p['product_reference'] : '';
+            $qty = (int) $p['product_quantity'];
+            $unit = (float) $p['unit_price_tax_incl'];
+            $total = $unit * $qty;
+
+            $nameHtml = htmlspecialchars($name, ENT_QUOTES, 'UTF-8')
+                . ($ref !== '' ? ' <span style="color:#999;">(' . htmlspecialchars($ref, ENT_QUOTES, 'UTF-8') . ')</span>' : '');
+
+            $rowsHtml .= '<tr>'
+                . '<td style="padding:8px 0; border-bottom:1px solid #eee;">' . $nameHtml . '</td>'
+                . '<td style="padding:8px 0; border-bottom:1px solid #eee; text-align:center;">' . $qty . '</td>'
+                . '<td style="padding:8px 0; border-bottom:1px solid #eee; text-align:right;">' . Tools::displayPrice($unit, $currency) . '</td>'
+                . '<td style="padding:8px 0; border-bottom:1px solid #eee; text-align:right;">' . Tools::displayPrice($total, $currency) . '</td>'
+                . '</tr>';
+
+            $rowsText .= $qty . ' x ' . $name . ($ref !== '' ? ' (' . $ref . ')' : '')
+                . ' — ' . Tools::displayPrice($total, $currency) . "\n";
+
+            if (!empty($p['download_hash']) || !empty($p['is_virtual'])) {
+                $hasVirtual = true;
+            }
+        }
+
+        $totProducts = (float) $order->total_products_wt;
+        $totShipping = (float) $order->total_shipping_tax_incl;
+        $totPaid = (float) $order->total_paid_tax_incl;
+
+        $detailsHtml = '<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse; font-size:14px;">'
+            . '<thead><tr>'
+            . '<th align="left" style="padding:8px 0; border-bottom:2px solid #333;">Article</th>'
+            . '<th align="center" style="padding:8px 0; border-bottom:2px solid #333;">Qté</th>'
+            . '<th align="right" style="padding:8px 0; border-bottom:2px solid #333;">P.U.</th>'
+            . '<th align="right" style="padding:8px 0; border-bottom:2px solid #333;">Total</th>'
+            . '</tr></thead><tbody>' . $rowsHtml . '</tbody></table>'
+            . '<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px; font-size:14px;">'
+            . '<tr><td align="right" style="padding:2px 0;">Produits :</td><td align="right" width="120" style="padding:2px 0;">' . Tools::displayPrice($totProducts, $currency) . '</td></tr>'
+            . '<tr><td align="right" style="padding:2px 0;">Livraison :</td><td align="right" style="padding:2px 0;">' . Tools::displayPrice($totShipping, $currency) . '</td></tr>'
+            . '<tr><td align="right" style="padding:6px 0; font-weight:bold; border-top:1px solid #333;">Total :</td><td align="right" style="padding:6px 0; font-weight:bold; border-top:1px solid #333;">' . Tools::displayPrice($totPaid, $currency) . '</td></tr>'
+            . '</table>';
+
+        $detailsText = $rowsText . "\n"
+            . 'Produits : ' . Tools::displayPrice($totProducts, $currency) . "\n"
+            . 'Livraison : ' . Tools::displayPrice($totShipping, $currency) . "\n"
+            . 'Total : ' . Tools::displayPrice($totPaid, $currency) . "\n";
+
+        $invoiceAddress = new Address((int) $order->id_address_invoice);
+        $deliveryAddress = new Address((int) $order->id_address_delivery);
+
+        $orderLink = $link->getPageLink('order-detail', true, $idLang, 'id_order=' . (int) $order->id);
+
+        if ($hasVirtual) {
+            $downloadHtml = '<p style="margin:0 0 16px; font-size:15px; line-height:1.5;">'
+                . 'Vos produits téléchargeables sont disponibles depuis votre compte : '
+                . '<a href="' . $orderLink . '">accéder à ma commande</a>.</p>';
+            $downloadText = 'Vos produits téléchargeables sont disponibles depuis votre compte : ' . $orderLink . "\n";
+        } else {
+            $downloadHtml = '';
+            $downloadText = '';
+        }
+
+        return [
+            'details_html' => $detailsHtml,
+            'details_text' => $detailsText,
+            'invoice_address_html' => AddressFormat::generateAddress($invoiceAddress, [], '<br />', ' '),
+            'invoice_address_text' => AddressFormat::generateAddress($invoiceAddress, [], "\n", ' '),
+            'delivery_address_html' => AddressFormat::generateAddress($deliveryAddress, [], '<br />', ' '),
+            'delivery_address_text' => AddressFormat::generateAddress($deliveryAddress, [], "\n", ' '),
+            'download_html' => $downloadHtml,
+            'download_text' => $downloadText,
+            'order_link' => $orderLink,
+        ];
     }
 
     /* ----------------------------------------------------------------------

@@ -36,7 +36,11 @@ abbyinvoicing/
 
 > Le template d'email `abby_invoice` doit exister dans `mails/<iso>/` pour **chaque
 > langue active** de la boutique (au minimum `fr` et `en`). Variables disponibles :
-> `{firstname}`, `{lastname}`, `{order_reference}`, `{invoice_number}`, `{shop_name}`.
+> `{firstname}`, `{lastname}`, `{shop_name}`, `{order_reference}`, `{order_link}`,
+> `{invoice_line_html|text}`, `{order_details_html|text}`,
+> `{invoice_address_html|text}`, `{delivery_address_html|text}`,
+> `{download_block_html|text}`. Les variantes `_html` sont utilisées dans le `.html`,
+> les `_text` dans le `.txt`.
 
 ## Installation
 
@@ -78,6 +82,38 @@ agit sur deux points :
 > ⚠️ `PS_INVOICE = 0` est un réglage **global** : il coupe aussi la génération de
 > factures natives dans le BO et le téléchargement de facture depuis le compte
 > client. C'est voulu (Abby devient la seule source), mais à connaître.
+
+### Email client unique (fusion des emails)
+
+Par défaut, une commande payée déclenche **4 emails** PrestaShop (confirmation de
+commande, paiement accepté, lien de téléchargement pour les produits virtuels, et
+la facture). L'option *« Fusionner les emails client »* (`ABBY_MERGE_EMAILS`,
+activée par défaut) les remplace par **un seul** email récapitulatif envoyé par le
+module après paiement (template `abby_invoice`), contenant :
+
+- la confirmation de commande (lignes, totaux, adresses),
+- le lien vers la commande dans le compte client (et l'accès aux téléchargements
+  si la commande contient des produits virtuels),
+- la **facture Abby en pièce jointe** (si finalisée),
+- la mention du **droit de rétractation** (texte du template, **à adapter à vos CGV**).
+
+Mécanique :
+- Le hook `actionEmailSendBefore` **annule** les emails natifs `order_conf`,
+  `payment` et `download_product` (retour `false`). Il ne les annule **que** si la
+  clé API est configurée, pour ne jamais couper un email sans pouvoir le remplacer.
+- Le module envoie ensuite l'email unique — **même si la synchro Abby échoue**
+  (dans ce cas : confirmation de commande sans la facture). Le client reçoit donc
+  toujours exactement un email.
+
+> ⚠️ **Réservé aux paiements instantanés (CB/PayPal).** Pour un paiement différé
+> (virement, chèque, contre-remboursement), la commande est confirmée avant le
+> paiement : il faut alors garder les emails natifs (un email précoce avec les
+> instructions de paiement). **Désactivez** l'option dans ce cas.
+>
+> ⚠️ L'email unique **remplace la confirmation de commande** (support durable au
+> sens de l'art. L221-13 du Code de la consommation). Vérifiez que son contenu —
+> notamment la clause de **droit de rétractation** du template — est conforme à vos
+> CGV avant la mise en production.
 
 ## Endpoints utilisés
 

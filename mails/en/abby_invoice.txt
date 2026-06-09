@@ -1,10 +1,25 @@
 Hello {firstname} {lastname},
 
-Please find attached your invoice no. {invoice_number}, for your order {order_reference}.
+We confirm that your order {order_reference} has been registered and paid. Thank you for your trust!
 
-This invoice is a legal document: please keep it for your records.
+{invoice_line_text}
 
-Thank you for your trust,
+ORDER SUMMARY
+-------------
+{order_details_text}
+{download_block_text}
+Billing address:
+{invoice_address_text}
+
+Delivery address:
+{delivery_address_text}
+
+Review your order: {order_link}
+
+RIGHT OF WITHDRAWAL (adapt to your terms)
+You have 14 days from receipt of the goods to exercise your right of withdrawal, without having to give any reason. This right does not apply to digital content supplied immediately after your order, for which you expressly agreed to immediate performance and acknowledged the loss of the right of withdrawal. See our terms and conditions for full details.
+
+See you soon,
 The {shop_name} team
 
 ---
