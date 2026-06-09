@@ -1,0 +1,11 @@
+Hello {firstname} {lastname},
+
+Please find attached your invoice no. {invoice_number}, for your order {order_reference}.
+
+This invoice is a legal document: please keep it for your records.
+
+Thank you for your trust,
+The {shop_name} team
+
+---
+This email was sent automatically, please do not reply.

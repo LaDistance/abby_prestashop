@@ -1,0 +1,11 @@
+Bonjour {firstname} {lastname},
+
+Vous trouverez en pièce jointe votre facture n° {invoice_number}, correspondant à votre commande {order_reference}.
+
+Cette facture a valeur de document légal : nous vous invitons à la conserver.
+
+Merci de votre confiance,
+L'équipe {shop_name}
+
+---
+Cet email vous a été envoyé automatiquement, merci de ne pas y répondre.
