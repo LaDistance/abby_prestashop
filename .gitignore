@@ -1,0 +1,10 @@
+# Build artifact (packaged module)
+abby_prestashop.zip
+*.zip
+
+# Tooling
+.claude/
+
+# OS / editor
+.DS_Store
+Thumbs.db

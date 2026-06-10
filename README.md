@@ -22,17 +22,21 @@ deux cas et laisse Abby appliquer le bon circuit.
 ```
 abbyinvoicing/
 ├── abbyinvoicing.php                       # module : install, hooks, config BO
+├── index.php                               # stub de sécurité (présent dans chaque dossier)
 ├── classes/
 │   ├── AbbyApiClient.php                    # client HTTP de l'API Abby (cURL)
 │   └── AbbyInvoiceSync.php                  # mapping commande -> facture + orchestration
 ├── sql/
 │   └── install.php                          # table de mapping ps_abby_invoice
 ├── mails/
-│   ├── fr/abby_invoice.{html,txt}           # email d'envoi de la facture (FR)
-│   └── en/abby_invoice.{html,txt}           # email d'envoi de la facture (EN, fallback)
+│   ├── fr/abby_invoice.{html,txt}           # email client unique (FR)
+│   └── en/abby_invoice.{html,txt}           # email client unique (EN, fallback)
 └── views/templates/admin/
     └── order_panel.tpl                      # encart statut dans la fiche commande
 ```
+
+> Chaque dossier contient aussi un `index.php` de sécurité (stub `header('Location: ../')`)
+> pour empêcher le listing du répertoire, conformément à la convention PrestaShop.
 
 > Le template d'email `abby_invoice` doit exister dans `mails/<iso>/` pour **chaque
 > langue active** de la boutique (au minimum `fr` et `en`). Variables disponibles :
@@ -92,8 +96,9 @@ activée par défaut) les remplace par **un seul** email récapitulatif envoyé 
 module après paiement (template `abby_invoice`), contenant :
 
 - la confirmation de commande (lignes, totaux, adresses),
-- le lien vers la commande dans le compte client (et l'accès aux téléchargements
-  si la commande contient des produits virtuels),
+- les **liens de téléchargement directs** des produits virtuels (mêmes liens
+  sécurisés `get-file` que l'email natif `download_product`), plus un lien vers la
+  commande dans le compte client,
 - la **facture Abby en pièce jointe** (si finalisée),
 - la mention du **droit de rétractation** (texte du template, **à adapter à vos CGV**).
 

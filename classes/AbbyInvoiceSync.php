@@ -234,7 +234,7 @@ class AbbyInvoiceSync
 
         $rowsHtml = '';
         $rowsText = '';
-        $hasVirtual = false;
+        $downloads = [];
 
         foreach ($order->getProducts() as $p) {
             $name = (string) $p['product_name'];
@@ -256,8 +256,10 @@ class AbbyInvoiceSync
             $rowsText .= $qty . ' x ' . $name . ($ref !== '' ? ' (' . $ref . ')' : '')
                 . ' — ' . Tools::displayPrice($total, $currency) . "\n";
 
-            if (!empty($p['download_hash']) || !empty($p['is_virtual'])) {
-                $hasVirtual = true;
+            // Lien de téléchargement direct (produit virtuel avec fichier).
+            $download = $this->buildDownloadLink($p);
+            if ($download !== null) {
+                $downloads[] = $download;
             }
         }
 
@@ -288,11 +290,19 @@ class AbbyInvoiceSync
 
         $orderLink = $link->getPageLink('order-detail', true, $idLang, 'id_order=' . (int) $order->id);
 
-        if ($hasVirtual) {
-            $downloadHtml = '<p style="margin:0 0 16px; font-size:15px; line-height:1.5;">'
-                . 'Vos produits téléchargeables sont disponibles depuis votre compte : '
-                . '<a href="' . $orderLink . '">accéder à ma commande</a>.</p>';
-            $downloadText = 'Vos produits téléchargeables sont disponibles depuis votre compte : ' . $orderLink . "\n";
+        if (!empty($downloads)) {
+            $itemsHtml = '';
+            $itemsText = '';
+            foreach ($downloads as $d) {
+                $itemsHtml .= '<li style="margin-bottom:6px;"><a href="' . $d['url'] . '">'
+                    . htmlspecialchars($d['name'], ENT_QUOTES, 'UTF-8') . '</a></li>';
+                $itemsText .= '- ' . $d['name'] . ' : ' . $d['url'] . "\n";
+            }
+            $downloadHtml = '<div style="margin-top:8px;">'
+                . '<h4 style="margin:0 0 8px; font-size:14px;">Vos téléchargements</h4>'
+                . '<ul style="margin:0 0 16px; padding-left:20px; font-size:14px; line-height:1.5;">' . $itemsHtml . '</ul>'
+                . '</div>';
+            $downloadText = "VOS TÉLÉCHARGEMENTS\n" . $itemsText;
         } else {
             $downloadHtml = '';
             $downloadText = '';
@@ -308,6 +318,54 @@ class AbbyInvoiceSync
             'download_html' => $downloadHtml,
             'download_text' => $downloadText,
             'order_link' => $orderLink,
+        ];
+    }
+
+    /**
+     * Construit le lien de téléchargement direct (sécurisé) d'un produit virtuel,
+     * identique à celui de l'email natif `download_product` de PrestaShop :
+     * URL `get-file&key=<filename>-<download_hash>` via ProductDownload::getTextLink().
+     * La péremption / le nombre de téléchargements sont contrôlés par le contrôleur
+     * get-file lui-même.
+     *
+     * @param array $product Ligne issue de Order::getProducts()
+     * @return array|null ['url' => string, 'name' => string] ou null si non téléchargeable
+     */
+    private function buildDownloadLink(array $product)
+    {
+        $hash = isset($product['download_hash']) ? (string) $product['download_hash'] : '';
+        if ($hash === '') {
+            return null;
+        }
+
+        $idProduct = 0;
+        if (isset($product['product_id'])) {
+            $idProduct = (int) $product['product_id'];
+        } elseif (isset($product['id_product'])) {
+            $idProduct = (int) $product['id_product'];
+        }
+        if ($idProduct <= 0) {
+            return null;
+        }
+
+        $idProductDownload = ProductDownload::getIdFromIdProduct($idProduct);
+        if (!$idProductDownload) {
+            return null;
+        }
+
+        $productDownload = new ProductDownload((int) $idProductDownload);
+        if (!Validate::isLoadedObject($productDownload)) {
+            return null;
+        }
+
+        $name = $productDownload->display_filename;
+        if (!$name) {
+            $name = isset($product['product_name']) ? (string) $product['product_name'] : 'Téléchargement';
+        }
+
+        return [
+            'url' => $productDownload->getTextLink($hash),
+            'name' => $name,
         ];
     }
 
