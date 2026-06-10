@@ -1,10 +1,9 @@
 <?php
 /**
- * Abby Invoicing — synchronise les commandes PrestaShop 8 vers Abby
+ * Abby Invoicing - synchronise les commandes PrestaShop 8 vers Abby
  * (plateforme agréée) pour la facturation électronique / e-reporting.
  *
- * Auteur : (à compléter)
- * Licence : à définir
+ * Auteur : Antoine LAURENT
  */
 if (!defined('_PS_VERSION_')) {
     exit;
@@ -20,7 +19,7 @@ class AbbyInvoicing extends Module
         $this->name = 'abbyinvoicing';
         $this->tab = 'billing_invoicing';
         $this->version = '1.0.0';
-        $this->author = 'Votre nom';
+        $this->author = 'Antoine LAURENT';
         $this->need_instance = 0;
         $this->ps_versions_compliancy = ['min' => '8.0.0', 'max' => '8.99.99'];
         $this->bootstrap = true;
@@ -88,6 +87,11 @@ class AbbyInvoicing extends Module
      * -------------------------------------------------------------------- */
     public function hookActionOrderStatusPostUpdate(array $params)
     {
+        // Auto-réparation : si le module a été mis à jour sans réinstallation, le
+        // hook actionEmailSendBefore (ajouté après coup) peut manquer. On l'enregistre
+        // ici pour que la suppression des emails natifs soit active dès la commande suivante.
+        $this->ensureHooksRegistered();
+
         if (empty($params['newOrderStatus']) || empty($params['id_order'])) {
             return;
         }
@@ -179,6 +183,9 @@ class AbbyInvoicing extends Module
      * -------------------------------------------------------------------- */
     public function getContent()
     {
+        // Auto-réparation des hooks (cas d'une mise à jour sans réinstallation).
+        $this->ensureHooksRegistered();
+
         $output = '';
 
         // Resync manuel depuis la fiche commande
@@ -325,6 +332,19 @@ class AbbyInvoicing extends Module
             ['id' => 'on', 'value' => 1, 'label' => $this->l('Oui')],
             ['id' => 'off', 'value' => 0, 'label' => $this->l('Non')],
         ];
+    }
+
+    /**
+     * Enregistre les hooks susceptibles d'avoir été ajoutés après la première
+     * installation (donc absents si le module a seulement été mis à jour). Idempotent.
+     */
+    private function ensureHooksRegistered()
+    {
+        foreach (['actionOrderStatusPostUpdate', 'actionEmailSendBefore', 'displayAdminOrderMainBottom'] as $hook) {
+            if (!$this->isRegisteredInHook($hook)) {
+                $this->registerHook($hook);
+            }
+        }
     }
 
     /**

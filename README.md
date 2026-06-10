@@ -110,6 +110,14 @@ Mécanique :
   (dans ce cas : confirmation de commande sans la facture). Le client reçoit donc
   toujours exactement un email.
 
+> **Dépannage — on reçoit encore les 4 emails.** Le hook `actionEmailSendBefore`
+> n'est enregistré qu'à l'installation : si le module a été **mis à jour sans
+> réinstallation**, ce hook manque et la suppression ne s'active pas. Le module
+> se répare tout seul à la **première ouverture de la page de configuration** (et
+> à la commande suivante). Sinon : vérifier que *« Fusionner les emails client »*
+> est sur **Oui**, ou réinstaller le module. (Inutile de désinstaller : ça
+> effacerait la clé API.)
+
 > ⚠️ **Réservé aux paiements instantanés (CB/PayPal).** Pour un paiement différé
 > (virement, chèque, contre-remboursement), la commande est confirmée avant le
 > paiement : il faut alors garder les emails natifs (un email précoce avec les
