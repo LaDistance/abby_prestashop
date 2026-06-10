@@ -228,9 +228,15 @@ class AbbyInvoiceSync
      */
     private function buildOrderBlocks(Order $order)
     {
-        $idLang = (int) $order->id_lang;
         $currency = new Currency((int) $order->id_currency);
-        $link = Context::getContext()->link;
+
+        // URL de base de la boutique DE LA COMMANDE (et pas du contexte courant, qui
+        // peut être l'admin lors d'un resync / changement de statut en BO).
+        $shop = new Shop((int) $order->id_shop);
+        $baseUrl = $shop->getBaseURL(true);
+        if (!$baseUrl) {
+            $baseUrl = Context::getContext()->shop->getBaseURL(true);
+        }
 
         $rowsHtml = '';
         $rowsText = '';
@@ -257,7 +263,7 @@ class AbbyInvoiceSync
                 . ' — ' . Tools::displayPrice($total, $currency) . "\n";
 
             // Lien de téléchargement direct (produit virtuel avec fichier).
-            $download = $this->buildDownloadLink($p);
+            $download = $this->buildDownloadLink($p, $baseUrl);
             if ($download !== null) {
                 $downloads[] = $download;
             }
@@ -288,7 +294,7 @@ class AbbyInvoiceSync
         $invoiceAddress = new Address((int) $order->id_address_invoice);
         $deliveryAddress = new Address((int) $order->id_address_delivery);
 
-        $orderLink = $link->getPageLink('order-detail', true, $idLang, 'id_order=' . (int) $order->id);
+        $orderLink = rtrim($baseUrl, '/') . '/index.php?controller=order-detail&id_order=' . (int) $order->id;
 
         if (!empty($downloads)) {
             $itemsHtml = '';
@@ -322,16 +328,23 @@ class AbbyInvoiceSync
     }
 
     /**
-     * Construit le lien de téléchargement direct (sécurisé) d'un produit virtuel,
-     * identique à celui de l'email natif `download_product` de PrestaShop :
-     * URL `get-file&key=<filename>-<download_hash>` via ProductDownload::getTextLink().
-     * La péremption / le nombre de téléchargements sont contrôlés par le contrôleur
-     * get-file lui-même.
+     * Construit le lien de téléchargement direct (sécurisé) d'un produit virtuel.
+     * La clé est identique à celle de l'email natif `download_product` :
+     * `<ProductDownload->filename>-<download_hash>`.
      *
-     * @param array $product Ligne issue de Order::getProducts()
+     * On NE passe PAS par ProductDownload::getTextLink() : cette méthode s'appuie
+     * sur le Link du contexte courant, qui est le contexte ADMIN quand l'email part
+     * d'un changement de statut / resync en back-office → URL erronée
+     * (« get-file-admin.php »). On force donc une URL front absolue via l'URL de base
+     * de la boutique, valable quel que soit le contexte.
+     * La péremption / le nombre de téléchargements restent contrôlés par le
+     * contrôleur get-file lui-même.
+     *
+     * @param array  $product Ligne issue de Order::getProducts()
+     * @param string $baseUrl URL de base front de la boutique de la commande (avec slash final)
      * @return array|null ['url' => string, 'name' => string] ou null si non téléchargeable
      */
-    private function buildDownloadLink(array $product)
+    private function buildDownloadLink(array $product, $baseUrl)
     {
         $hash = isset($product['download_hash']) ? (string) $product['download_hash'] : '';
         if ($hash === '') {
@@ -363,8 +376,14 @@ class AbbyInvoiceSync
             $name = isset($product['product_name']) ? (string) $product['product_name'] : 'Téléchargement';
         }
 
+        // URL front absolue, indépendante du contexte (front/admin). get-file est
+        // un contrôleur non réécrit : index.php?controller=get-file&key=... fonctionne
+        // quelle que soit la configuration d'URL simplifiées.
+        $key = $productDownload->filename . '-' . $hash;
+        $url = rtrim($baseUrl, '/') . '/index.php?controller=get-file&key=' . urlencode($key);
+
         return [
-            'url' => $productDownload->getTextLink($hash),
+            'url' => $url,
             'name' => $name,
         ];
     }
