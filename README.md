@@ -1,4 +1,4 @@
-# Module PrestaShop 8 — Facturation électronique via Abby
+# Module PrestaShop 8 - Facturation électronique via Abby
 
 Synchronise les commandes PrestaShop vers **Abby** (plateforme agréée / PA-PDP)
 au moment du paiement. Abby se charge ensuite du routage légal :
