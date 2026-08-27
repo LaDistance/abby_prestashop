@@ -5,6 +5,8 @@ au moment du paiement. Abby se charge ensuite du routage légal :
 **Factur-X** transmise via la plateforme agréée pour les clients **professionnels (B2B)**,
 **e-reporting** pour les clients **particuliers (B2C)**.
 
+Attention : ce module a été conçu et développé pour une personne en particulier, je ne fournirai *PAS* de support si vous décidez de l'utiliser de votre côté sans connaissances de développement.
+
 ## Pourquoi cette répartition B2B / B2C
 
 La réforme de la facturation électronique impose, pour une micro-entreprise :
@@ -146,19 +148,6 @@ Confirmés sur la doc Abby :
 > ⚠️ Les routes clients/organisations **n'ont pas** de préfixe `/v2` et la lecture
 > (pluriel) diffère de la création (singulier). Les routes facturation, elles, sont
 > bien sous `/v2/billing`. La finalisation est un **PATCH** (pas un POST).
-
-## ⚠️ À confirmer avec Abby avant la production
-
-1. **Enums lignes** (toutes des **chaînes**, contrairement à la doc qui les
-   présente parfois en entiers — l'API valide des chaînes) :
-   - `quantityUnit` : `unit`, `gram`, `hour`, `day`… (on utilise `unit`).
-   - `type` : `sale_of_goods`, `service_delivery`, `commercial_or_craft_services`,
-     `sale_of_manufactured_goods`, `disbursement`. On utilise `sale_of_goods` pour
-     les produits (bien physique ou numérique) et `service_delivery` pour le port.
-   - `vatCode` : `FR_00HT`, `FR_2000`, `FR_1000`, `FR_550`… (on utilise `FR_00HT`
-     en franchise en base).
-2. Que la **finalisation via API** déclenche bien le même circuit légal (Factur-X /
-   e-reporting via la PA) que la finalisation dans l'interface Abby.
 
 ## Recommandations
 
