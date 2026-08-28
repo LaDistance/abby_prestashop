@@ -148,19 +148,3 @@ Confirmés sur la doc Abby :
 > ⚠️ Les routes clients/organisations **n'ont pas** de préfixe `/v2` et la lecture
 > (pluriel) diffère de la création (singulier). Les routes facturation, elles, sont
 > bien sous `/v2/billing`. La finalisation est un **PATCH** (pas un POST).
-
-## Recommandations
-
-- **Laisser Abby gérer la numérotation** des factures (continuité légale) ; ne pas
-  activer en parallèle la génération de factures natives PrestaShop pour le même flux.
-- Démarrer en **mode test** + **finalisation manuelle** (auto_finalize = Non) pour
-  relire les premières factures dans Abby avant d'automatiser l'émission.
-- En production, mémoriser le `contactId` Abby sur le client PrestaShop (ex. table
-  dédiée ou `id_customer` -> `abby_contact_id`) pour éviter de recréer un contact à
-  chaque commande.
-- Idéalement, déporter l'appel API dans une **file d'attente / cron** plutôt que dans
-  le hook synchrone, pour ne pas ralentir le tunnel de commande ni perdre une facture
-  si Abby est momentanément indisponible (prévoir un retry sur les lignes `status=error`).
-- Ceci n'est pas un conseil juridique ou fiscal : faire valider la configuration
-  (franchise, mentions, périmètre e-reporting) par l'expert-comptable de la cliente.
-```
